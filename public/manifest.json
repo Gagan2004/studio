@@ -1,13 +1,16 @@
 
 {
   "manifest_version": 3,
-  "name": "Form AutoPilot",
-  "version": "1.0",
-  "description": "Automatically fills forms using stored user data and AI-powered mapping.",
+  "name": "Form AutoPilot Extension",
+  "version": "0.1.0",
+  "description": "AI-Powered Form Filling Assistant",
   "permissions": [
     "storage",
     "activeTab",
     "scripting"
+  ],
+  "host_permissions": [
+    "http://localhost/*"
   ],
   "action": {
     "default_popup": "index.html",
@@ -22,13 +25,20 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["contentScript.js"]
+      "js": ["content.js"],
+      "run_at": "document_idle"
     }
   ],
-  "background": {
-    "service_worker": "background.js"
-  }
+  "web_accessible_resources": [
+    {
+      "resources": ["index.html"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

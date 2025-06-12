@@ -5,14 +5,27 @@ import type { UserData, Vault } from '@/types';
 
 const VAULTS_STORAGE_KEY = 'formAutoPilotVaults';
 
+const isExtensionContext = (): boolean => {
+  return typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
+};
+
 // Helper to get all vaults
 export const getVaults = (): Promise<Vault[]> => {
-  return new Promise((resolve) => {
-    if (typeof window !== 'undefined') {
+  return new Promise((resolve, reject) => {
+    if (isExtensionContext()) {
+      chrome.storage.local.get([VAULTS_STORAGE_KEY], (result) => {
+        if (chrome.runtime.lastError) {
+          console.error('Error getting vaults from chrome.storage:', chrome.runtime.lastError);
+          reject(chrome.runtime.lastError);
+        } else {
+          resolve(result[VAULTS_STORAGE_KEY] ? result[VAULTS_STORAGE_KEY] : []);
+        }
+      });
+    } else if (typeof window !== 'undefined' && window.localStorage) {
       const data = localStorage.getItem(VAULTS_STORAGE_KEY);
       resolve(data ? JSON.parse(data) : []);
     } else {
-      resolve([]); // Return empty array if localStorage is not available (e.g. SSR)
+      resolve([]); // Non-browser environment or storage unavailable
     }
   });
 };
@@ -20,16 +33,25 @@ export const getVaults = (): Promise<Vault[]> => {
 // Helper to save all vaults
 const saveAllVaults = (vaults: Vault[]): Promise<void> => {
   return new Promise((resolve, reject) => {
-    try {
-      if (typeof window !== 'undefined') {
+    if (isExtensionContext()) {
+      chrome.storage.local.set({ [VAULTS_STORAGE_KEY]: vaults }, () => {
+        if (chrome.runtime.lastError) {
+          console.error('Error saving vaults to chrome.storage:', chrome.runtime.lastError);
+          reject(chrome.runtime.lastError);
+        } else {
+          resolve();
+        }
+      });
+    } else if (typeof window !== 'undefined' && window.localStorage) {
+      try {
         localStorage.setItem(VAULTS_STORAGE_KEY, JSON.stringify(vaults));
         resolve();
-      } else {
-        reject(new Error('localStorage is not available.'));
+      } catch (error) {
+        console.error('Error saving vaults to localStorage:', error);
+        reject(error);
       }
-    } catch (error) {
-      console.error('Error saving vaults to localStorage:', error);
-      reject(error);
+    } else {
+      reject(new Error('No storage mechanism available.'));
     }
   });
 };
@@ -52,7 +74,6 @@ export const saveVault = async (vaultToSave: Partial<Vault> & { data: UserData, 
   let newOrUpdatedVault: Vault;
 
   if (existingVaultIndex > -1) {
-    // Update existing vault
     newOrUpdatedVault = {
       ...vaults[existingVaultIndex],
       ...vaultToSave,
@@ -62,9 +83,8 @@ export const saveVault = async (vaultToSave: Partial<Vault> & { data: UserData, 
     };
     vaults[existingVaultIndex] = newOrUpdatedVault;
   } else {
-    // Add new vault
     newOrUpdatedVault = {
-      id: vaultToSave.id || `vault-${now}`,
+      id: vaultToSave.id || `vault-${now}-${Math.random().toString(36).substr(2, 9)}`,
       name: vaultToSave.name,
       data: vaultToSave.data,
       isDefault: vaultToSave.isDefault || false,
@@ -74,17 +94,14 @@ export const saveVault = async (vaultToSave: Partial<Vault> & { data: UserData, 
     vaults.push(newOrUpdatedVault);
   }
   
-  // Ensure only one default vault if the new/updated one is set to default
   if (newOrUpdatedVault.isDefault) {
     vaults = vaults.map(v => 
       v.id === newOrUpdatedVault.id ? v : { ...v, isDefault: false }
     );
   } else if (vaults.length === 1 && !vaults.some(v => v.isDefault)) {
-    // If it's the only vault and no default is set, make it default
      vaults = vaults.map(v => v.id === newOrUpdatedVault.id ? { ...v, isDefault: true } : v);
      newOrUpdatedVault.isDefault = true;
   }
-
 
   await saveAllVaults(vaults);
   return newOrUpdatedVault;
@@ -96,10 +113,9 @@ export const deleteVault = async (vaultIdToDelete: string): Promise<void> => {
   const vaultToDelete = vaults.find(v => v.id === vaultIdToDelete);
   vaults = vaults.filter(v => v.id !== vaultIdToDelete);
 
-  // If the deleted vault was default and other vaults exist, set a new default
   if (vaultToDelete?.isDefault && vaults.length > 0) {
-    if (!vaults.some(v => v.isDefault)) { // Check if another default already exists (should not happen if logic is correct)
-      vaults[0].isDefault = true; // Set the first remaining vault as default
+    if (!vaults.some(v => v.isDefault)) {
+      vaults[0].isDefault = true;
     }
   }
   await saveAllVaults(vaults);
@@ -122,13 +138,10 @@ export const getDefaultVault = async (): Promise<Vault | null> => {
   if (defaultVault) {
     return defaultVault;
   }
-  // If no explicit default, return the first vault if available
   return vaults.length > 0 ? vaults[0] : null;
 };
 
-
-// Legacy functions (to be removed or refactored if UserData is only part of Vault)
-// For now, let's keep them but make them operate on the default vault concept.
+// --- Legacy/Simplified UserData functions (operate on default vault) ---
 
 export const saveUserData = async (data: UserData): Promise<void> => {
   let defaultVault = await getDefaultVault();
@@ -136,7 +149,6 @@ export const saveUserData = async (data: UserData): Promise<void> => {
     defaultVault.data = data;
     await saveVault(defaultVault);
   } else {
-    // Create a new default vault if none exists
     await saveVault({ name: 'Default Vault', data, isDefault: true });
   }
 };
@@ -147,8 +159,6 @@ export const getUserData = async (): Promise<UserData | null> => {
 };
 
 export const clearUserData = async (): Promise<void> => {
-  // This function becomes ambiguous. Do we clear the default vault's data, or delete the default vault?
-  // For now, let's clear the data of the default vault.
   const defaultVault = await getDefaultVault();
   if (defaultVault) {
     defaultVault.data = {};
