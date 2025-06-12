@@ -1,3 +1,4 @@
+
 'use server';
 
 /**
@@ -26,7 +27,7 @@ export type MapFormFieldsInput = z.infer<typeof MapFormFieldsInputSchema>;
 
 const MapFormFieldsOutputSchema = z.array(
   z.object({
-    fieldName: z.string().describe('The name of the user data field to map.'),
+    fieldName: z.string().describe('The name attribute of the form field to map to (e.g., "fullName", "emailAddress").'),
     value: z.string().describe('The value to fill in the form field with.'),
   })
 );
@@ -43,23 +44,26 @@ const prompt = ai.definePrompt({
   prompt: `You are an AI assistant designed to map user data to form fields on a webpage.
 
 You are given the following user data:
-{{#each (Object.keys userData)}}
-  {{@key}}: {{{lookup ../userData @key}}}
+{{#each userData}}
+  {{@key}}: {{{this}}}
 {{/each}}
 
-And the following form fields:
+And the following form fields from the webpage:
 {{#each formFields}}
   - Name: {{name}}, Label: {{label}}, Placeholder: {{placeholder}}, Type: {{type}}
 {{/each}}
 
-Create a JSON array mapping the user data fields to the form fields. Only include mappings where you are confident the data is relevant. Return an empty array if you can't create any confident mappings.
+Your task is to create a JSON array that maps relevant user data fields to the corresponding form field names.
+The 'fieldName' in your output MUST exactly match one of the 'name' attributes from the provided form fields.
+Only include mappings where you are confident the data is relevant.
+If you cannot create any confident mappings, return an empty JSON array.
 
-Ensure that your response is a valid JSON array of objects with 'fieldName' and 'value' keys.
+Ensure your response is a valid JSON array of objects, where each object has a 'fieldName' (string) and a 'value' (string) key.
 
-Example:
+Example of a valid response:
 [
-  { "fieldName": "user_email", "value": "john.doe@example.com" },
-  { "fieldName": "user_name", "value": "John Doe" }
+  { "fieldName": "emailAddress", "value": "john.doe@example.com" },
+  { "fieldName": "fullName", "value": "John Doe" }
 ]
 `,
 });
@@ -72,6 +76,9 @@ const mapFormFieldsFlow = ai.defineFlow(
   },
   async input => {
     const {output} = await prompt(input);
-    return output!;
+    // If the AI fails to produce valid output, output can be null.
+    // In such cases, return an empty array as per the prompt's instruction.
+    return output || [];
   }
 );
+
