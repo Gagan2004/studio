@@ -1,3 +1,7 @@
-export default function Home() {
-  return <></>;
+import { DataVaultForm } from '@/components/DataVaultForm';
+
+export default function DataVaultPage() {
+  return (
+    <DataVaultForm />
+  );
 }
