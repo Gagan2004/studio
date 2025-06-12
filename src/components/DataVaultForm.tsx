@@ -1,3 +1,4 @@
+
 'use client';
 
 import type { SubmitHandler } from 'react-hook-form';
@@ -13,7 +14,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { useToast } from '@/hooks/use-toast';
 import { UserData } from '@/types';
 import { saveUserData, getUserData } from '@/lib/storage';
-import { UserRound, Mail, Phone, Home, Building, Briefcase, Globe, Save } from 'lucide-react';
+import { UserRound, Mail, Phone, Home, Building, Briefcase, Globe, Save, PlusCircle, Trash2 } from 'lucide-react';
 
 const userDataSchema = z.object({
   name: z.string().optional(),
@@ -27,9 +28,16 @@ const userDataSchema = z.object({
 
 type UserDataFormValues = z.infer<typeof userDataSchema>;
 
+interface CustomField {
+  id: string; // For React key prop
+  keyName: string;
+  value: string;
+}
+
 export function DataVaultForm() {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(true);
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
 
   const form = useForm<UserDataFormValues>({
     resolver: zodResolver(userDataSchema),
@@ -49,16 +57,62 @@ export function DataVaultForm() {
       setIsLoading(true);
       const data = await getUserData();
       if (data) {
-        form.reset(data as UserDataFormValues);
+        const predefinedKeys = Object.keys(userDataSchema.shape);
+        const loadedCustomFields: CustomField[] = [];
+        const predefinedData: Partial<UserDataFormValues> = {};
+
+        for (const key in data) {
+          if (Object.prototype.hasOwnProperty.call(data, key)) {
+            if (predefinedKeys.includes(key)) {
+              predefinedData[key as keyof UserDataFormValues] = data[key];
+            } else if (data[key] !== undefined && typeof data[key] === 'string') {
+              loadedCustomFields.push({ id: `cf-${key}-${Date.now()}`, keyName: key, value: data[key] as string });
+            }
+          }
+        }
+        form.reset(predefinedData);
+        setCustomFields(loadedCustomFields);
       }
       setIsLoading(false);
     };
     loadData();
   }, [form]);
 
-  const onSubmit: SubmitHandler<UserDataFormValues> = async (data) => {
+  const addCustomField = () => {
+    setCustomFields(prevFields => [...prevFields, { id: `cf-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, keyName: '', value: '' }]);
+  };
+
+  const handleCustomFieldChange = (id: string, fieldType: 'keyName' | 'value', newValue: string) => {
+    setCustomFields(prevFields =>
+      prevFields.map(field =>
+        field.id === id ? { ...field, [fieldType]: newValue } : field
+      )
+    );
+  };
+
+  const removeCustomField = (id: string) => {
+    setCustomFields(prevFields => prevFields.filter(field => field.id !== id));
+  };
+
+  const onSubmit: SubmitHandler<UserDataFormValues> = async (formData) => {
+    const combinedData: UserData = { ...formData };
+
+    customFields.forEach(field => {
+      const trimmedKeyName = field.keyName.trim();
+      if (trimmedKeyName) {
+        combinedData[trimmedKeyName] = field.value;
+      }
+    });
+    
+    Object.keys(combinedData).forEach(key => {
+      const typedKey = key as keyof UserData;
+      if (combinedData[typedKey] === '' || combinedData[typedKey] === undefined) {
+        delete combinedData[typedKey];
+      }
+    });
+
     try {
-      await saveUserData(data as UserData);
+      await saveUserData(combinedData);
       toast({
         title: 'Success!',
         description: 'Your information has been saved securely.',
@@ -81,7 +135,7 @@ export function DataVaultForm() {
             <CardTitle className="text-2xl font-headline flex items-center gap-2"><UserRound className="text-primary"/> Data Vault</CardTitle>
             <CardDescription>Loading your personal information...</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 pt-6">
             <div className="h-10 bg-muted rounded-md animate-pulse"></div>
             <div className="h-10 bg-muted rounded-md animate-pulse"></div>
             <div className="h-10 bg-muted rounded-md animate-pulse"></div>
@@ -139,6 +193,55 @@ export function DataVaultForm() {
                   )}
                 />
               ))}
+
+              <div className="space-y-3 pt-4 border-t border-border mt-6">
+                <Label className="text-base font-medium">Custom Fields</Label>
+                {customFields.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No custom fields added yet. Click the button below to add one.</p>
+                )}
+                {customFields.map((field) => (
+                  <div key={field.id} className="flex items-end gap-2 p-3 border rounded-md bg-muted/20">
+                    <FormItem className="flex-1">
+                      <Label htmlFor={`custom-key-${field.id}`} className="text-sm font-normal">Field Name</Label>
+                      <Input
+                        id={`custom-key-${field.id}`}
+                        placeholder="e.g. Loyalty ID"
+                        value={field.keyName}
+                        onChange={(e) => handleCustomFieldChange(field.id, 'keyName', e.target.value)}
+                        className="mt-1 text-sm py-2 px-3"
+                      />
+                    </FormItem>
+                    <FormItem className="flex-1">
+                      <Label htmlFor={`custom-value-${field.id}`} className="text-sm font-normal">Field Value</Label>
+                      <Input
+                        id={`custom-value-${field.id}`}
+                        placeholder="Value"
+                        value={field.value}
+                        onChange={(e) => handleCustomFieldChange(field.id, 'value', e.target.value)}
+                        className="mt-1 text-sm py-2 px-3"
+                      />
+                    </FormItem>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeCustomField(field.id)}
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0 h-9 w-9"
+                      aria-label="Remove custom field"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={addCustomField}
+                className="w-full mt-2"
+              >
+                <PlusCircle className="mr-2 h-4 w-4" /> Add Another Field
+              </Button>
             </CardContent>
             <CardFooter className="bg-muted/50 p-6 border-t">
               <Button type="submit" size="lg" className="w-full text-lg py-3 bg-primary hover:bg-primary/90">
