@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, FormEvent } from 'react';
@@ -7,9 +8,9 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import type { UserData, FormFieldDetail } from '@/types';
-import { getUserData } from '@/lib/storage';
-import { mapFormFields, MapFormFieldsInput } from '@/ai/flows/map-form-fields'; // Adjusted import
+import type { UserData, FormFieldDetail, Vault } from '@/types'; // Added Vault
+import { getDefaultVault } from '@/lib/storage'; // Changed to getDefaultVault
+import { mapFormFields, MapFormFieldsInput } from '@/ai/flows/map-form-fields';
 import { Wand2, Eye, EyeOff, Loader2 } from 'lucide-react';
 
 interface SampleFormElements extends HTMLFormControlsCollection {
@@ -29,14 +30,17 @@ interface SampleFormElement extends HTMLFormElement {
 
 export function AutofillPageClient() {
   const { toast } = useToast();
-  const [userData, setUserData] = useState<UserData | null>(null);
+  const [defaultVaultData, setDefaultVaultData] = useState<UserData | null>(null); // Renamed from userData
   const [isProcessing, setIsProcessing] = useState(false);
   const [showSampleData, setShowSampleData] = useState(false);
+  const [isLoadingVault, setIsLoadingVault] = useState(true);
 
   useEffect(() => {
     const loadData = async () => {
-      const data = await getUserData();
-      setUserData(data);
+      setIsLoadingVault(true);
+      const vault = await getDefaultVault();
+      setDefaultVaultData(vault ? vault.data : null);
+      setIsLoadingVault(false);
     };
     loadData();
   }, []);
@@ -46,7 +50,6 @@ export function AutofillPageClient() {
     if (!form) return [];
 
     const fields: FormFieldDetail[] = [];
-    // Explicitly list input IDs to ensure order and inclusion
     const inputIds = ['fullName', 'emailAddress', 'phoneNumber', 'shippingAddress', 'companyName', 'job', 'userWebsite', 'feedback'];
 
     inputIds.forEach(id => {
@@ -72,10 +75,10 @@ export function AutofillPageClient() {
   };
 
   const handleAutofill = async () => {
-    if (!userData) {
+    if (!defaultVaultData) {
       toast({
-        title: 'No User Data',
-        description: 'Please save your information in the Data Vault first.',
+        title: 'No Default Vault Data',
+        description: 'Please save your information in a vault and set one as default.',
         variant: 'destructive',
       });
       return;
@@ -90,8 +93,7 @@ export function AutofillPageClient() {
     }
     
     const aiInput: MapFormFieldsInput = {
-      // Convert UserData to Record<string, string> for the AI flow
-      userData: Object.entries(userData)
+      userData: Object.entries(defaultVaultData) // Use defaultVaultData here
         .filter(([_, value]) => typeof value === 'string')
         .reduce((obj, [key, value]) => {
           obj[key] = value as string;
@@ -115,17 +117,14 @@ export function AutofillPageClient() {
         });
       } else {
         mappings.forEach(mapping => {
-          // The AI returns `fieldName` which should correspond to the `name` attribute of our inputs
           const fieldElement = document.getElementsByName(mapping.fieldName)[0] as HTMLInputElement | HTMLTextAreaElement;
           if (fieldElement) {
             fieldElement.value = mapping.value;
-            // Optionally, trigger change event for React controlled components if this were a real external form
-            // fieldElement.dispatchEvent(new Event('input', { bubbles: true }));
           }
         });
         toast({
           title: 'Autofill Complete!',
-          description: `${mappings.length} field(s) have been populated.`,
+          description: `${mappings.length} field(s) have been populated from your default vault.`,
         });
       }
     } catch (error) {
@@ -141,14 +140,12 @@ export function AutofillPageClient() {
   };
   
   const resetForm = (event: FormEvent<HTMLFormElement>) => {
-    // event.preventDefault(); // Keep this if you don't want native form submission
     const form = document.getElementById('sampleForm') as HTMLFormElement;
     if (form) {
       form.reset();
     }
     toast({ title: 'Form Cleared', description: 'Sample form has been reset.'});
   }
-
 
   return (
     <div className="container mx-auto py-10 px-4 max-w-3xl">
@@ -159,14 +156,18 @@ export function AutofillPageClient() {
              Autofill Tester
           </CardTitle>
           <CardDescription className="text-primary-foreground/80 text-base">
-            Test the AI-powered form filling on this sample form. Ensure your data is saved in the Data Vault.
+            Test AI form filling using data from your default vault. Manage vaults in the Data Vault section.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-6">
-          {userData && (
+          {isLoadingVault ? (
+            <div className="mb-6 p-4 border rounded-lg bg-muted/50 text-center">
+              <Loader2 className="h-6 w-6 animate-spin inline-block mr-2" /> Loading default vault data...
+            </div>
+          ) : defaultVaultData ? (
             <div className="mb-6 p-4 border rounded-lg bg-muted/50">
               <div className="flex justify-between items-center mb-2">
-                <h3 className="text-lg font-medium text-foreground">Your Stored Data Preview</h3>
+                <h3 className="text-lg font-medium text-foreground">Default Vault Data Preview</h3>
                 <Button variant="ghost" size="sm" onClick={() => setShowSampleData(!showSampleData)}>
                   {showSampleData ? <EyeOff className="mr-2 h-4 w-4" /> : <Eye className="mr-2 h-4 w-4" />}
                   {showSampleData ? 'Hide' : 'Show'} Data
@@ -174,9 +175,13 @@ export function AutofillPageClient() {
               </div>
               {showSampleData && (
                 <pre className="text-sm bg-background p-3 rounded-md overflow-x-auto">
-                  {JSON.stringify(userData, null, 2)}
+                  {JSON.stringify(defaultVaultData, null, 2)}
                 </pre>
               )}
+            </div>
+          ) : (
+             <div className="mb-6 p-4 border border-destructive/50 rounded-lg bg-destructive/10 text-destructive text-center">
+                No default vault data found. Please go to the Data Vault, create a vault, add your information, and set it as default.
             </div>
           )}
 
@@ -217,7 +222,7 @@ export function AutofillPageClient() {
               <Button 
                 type="button" 
                 onClick={handleAutofill} 
-                disabled={isProcessing || !userData}
+                disabled={isProcessing || !defaultVaultData || isLoadingVault}
                 className="w-full sm:w-auto text-lg py-3 bg-accent hover:bg-accent/90 flex-1"
                 size="lg"
               >
@@ -233,9 +238,9 @@ export function AutofillPageClient() {
                 Clear Form
               </Button>
             </div>
-            {!userData && (
+            {(!defaultVaultData && !isLoadingVault) && (
               <p className="text-sm text-destructive text-center mt-4">
-                Please add your information in the Data Vault to use the Autofill feature.
+                Please add your information in a vault and set it as default to use the Autofill feature.
               </p>
             )}
           </form>
@@ -244,3 +249,4 @@ export function AutofillPageClient() {
     </div>
   );
 }
+

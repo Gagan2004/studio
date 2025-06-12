@@ -1,3 +1,4 @@
+
 export interface UserData {
   id?: string; // Optional: if we manage multiple profiles later
   name?: string;
@@ -8,6 +9,15 @@ export interface UserData {
   jobTitle?: string;
   website?: string;
   [key: string]: string | undefined; // Allow additional custom fields
+}
+
+export interface Vault {
+  id: string;
+  name: string;
+  data: UserData;
+  isDefault?: boolean;
+  createdAt: number; // Added for sorting or reference
+  updatedAt: number; // Added for sorting or reference
 }
 
 export interface FormFieldDetail {
