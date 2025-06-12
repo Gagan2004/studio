@@ -3,6 +3,8 @@ import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
   output: 'export', // Essential for browser extensions
+  assetPrefix: './', // Ensures relative asset paths
+  trailingSlash: false, // Creates cleaner paths (e.g., /page.html)
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -20,9 +22,6 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  // If your app uses trailing slashes, set this, otherwise Next.js static export might create folder structures
-  // that don't work well with extension popup paths (e.g. /page/index.html instead of /page.html)
-  // trailingSlash: false, // Set to true or false based on your routing needs, false is often simpler for extensions.
 };
 
 export default nextConfig;
